@@ -1,12 +1,11 @@
 use core::fmt;
-use std::collections::HashMap;
 use std::env;
 use std::fmt::Display;
 use std::fs::read_to_string;
 use std::io;
 use std::path::Path;
 
-use phf::phf_map;
+use phf;
 
 fn is_digit(c: char) -> bool {
     c >= '0' && c <= '9'
@@ -43,7 +42,7 @@ enum TokenType {
     GreaterEqual,
     Less,
     LessEqual,
-    // Literals.
+    // LiteralValues.
     Identifier,
     String,
     Number,
@@ -156,7 +155,7 @@ impl Interpreter {
 }
 
 #[derive(Clone, Debug)]
-enum Literal {
+enum LiteralValue {
     None,
     String(String),
     Float(f64),
@@ -166,15 +165,15 @@ enum Literal {
 struct Token {
     token_type: TokenType,
     lexeme: String,
-    literal: Literal,
+    LiteralValue: LiteralValue,
     line: u8,
 }
 impl Token {
-    fn new(token_type: TokenType, lexeme: String, literal: Literal, line: u8) -> Self {
+    fn new(token_type: TokenType, lexeme: String, LiteralValue: LiteralValue, line: u8) -> Self {
         Token {
             token_type,
             lexeme,
-            literal,
+            LiteralValue,
             line,
         }
     }
@@ -214,7 +213,7 @@ impl Parser {
         self.tokens.extend([Token::new(
             TokenType::EOF,
             "".to_string(),
-            Literal::None,
+            LiteralValue::None,
             self.line,
         )]);
         tokens = self.tokens.to_vec();
@@ -231,7 +230,6 @@ impl Parser {
     }
 
     fn match_expr(&mut self, expected: char) -> bool {
-        let mut res: bool;
         if self.is_at_end() {
             return false;
         }
@@ -269,57 +267,57 @@ impl Parser {
         let c: char = self.next();
         match c {
             '(' => {
-                self.add_token(TokenType::LeftParen, Literal::None);
+                self.add_token(TokenType::LeftParen, LiteralValue::None);
             }
             ')' => {
-                self.add_token(TokenType::RightParen, Literal::None);
+                self.add_token(TokenType::RightParen, LiteralValue::None);
             }
             '{' => {
-                self.add_token(TokenType::LeftBrace, Literal::None);
+                self.add_token(TokenType::LeftBrace, LiteralValue::None);
             }
             '}' => {
-                self.add_token(TokenType::RightBrace, Literal::None);
+                self.add_token(TokenType::RightBrace, LiteralValue::None);
             }
             ',' => {
-                self.add_token(TokenType::Comma, Literal::None);
+                self.add_token(TokenType::Comma, LiteralValue::None);
             }
             '.' => {
-                self.add_token(TokenType::Dot, Literal::None);
+                self.add_token(TokenType::Dot, LiteralValue::None);
             }
             '-' => {
-                self.add_token(TokenType::Minus, Literal::None);
+                self.add_token(TokenType::Minus, LiteralValue::None);
             }
             '+' => {
-                self.add_token(TokenType::Plus, Literal::None);
+                self.add_token(TokenType::Plus, LiteralValue::None);
             }
             ';' => {
-                self.add_token(TokenType::Semicolon, Literal::None);
+                self.add_token(TokenType::Semicolon, LiteralValue::None);
             }
             '*' => {
-                self.add_token(TokenType::Star, Literal::None);
+                self.add_token(TokenType::Star, LiteralValue::None);
             }
             '!' => {
                 match self.match_expr('=') {
-                    true => self.add_token(TokenType::BangEqual, Literal::None),
-                    false => self.add_token(TokenType::Bang, Literal::None),
+                    true => self.add_token(TokenType::BangEqual, LiteralValue::None),
+                    false => self.add_token(TokenType::Bang, LiteralValue::None),
                 };
             }
             '=' => {
                 match self.match_expr('=') {
-                    true => self.add_token(TokenType::EqualEqual, Literal::None),
-                    false => self.add_token(TokenType::Equal, Literal::None),
+                    true => self.add_token(TokenType::EqualEqual, LiteralValue::None),
+                    false => self.add_token(TokenType::Equal, LiteralValue::None),
                 };
             }
             '<' => {
                 match self.match_expr('=') {
-                    true => self.add_token(TokenType::LessEqual, Literal::None),
-                    false => self.add_token(TokenType::Less, Literal::None),
+                    true => self.add_token(TokenType::LessEqual, LiteralValue::None),
+                    false => self.add_token(TokenType::Less, LiteralValue::None),
                 };
             }
             '>' => {
                 match self.match_expr('=') {
-                    true => self.add_token(TokenType::GreaterEqual, Literal::None),
-                    false => self.add_token(TokenType::Greater, Literal::None),
+                    true => self.add_token(TokenType::GreaterEqual, LiteralValue::None),
+                    false => self.add_token(TokenType::Greater, LiteralValue::None),
                 };
             }
             '/' => {
@@ -331,17 +329,16 @@ impl Parser {
                     }
                     false => match self.match_expr('*') {
                         true => {
-                            while !self.is_at_end()
-                            {
+                            while !self.is_at_end() {
                                 self.next();
-                                if self.peek() == '*' && self.peek_next() == '/'{
+                                if self.peek() == '*' && self.peek_next() == '/' {
                                     self.next();
                                     self.next();
-                                    break
+                                    break;
                                 }
                             }
                         }
-                        false => self.add_token(TokenType::Slash, Literal::None),
+                        false => self.add_token(TokenType::Slash, LiteralValue::None),
                     },
                 };
             }
@@ -369,9 +366,9 @@ impl Parser {
             .unwrap();
 
         if KEYWORDS.contains_key(text) {
-            self.add_token(KEYWORDS.get(text).unwrap().clone(), Literal::None)
+            self.add_token(KEYWORDS.get(text).unwrap().clone(), LiteralValue::None)
         } else {
-            self.add_token(TokenType::Identifier, Literal::None)
+            self.add_token(TokenType::Identifier, LiteralValue::None)
         }
     }
 
@@ -391,7 +388,7 @@ impl Parser {
             .get_substring((self.start + 1) as usize, (self.curr - 1) as usize)
             .unwrap()
             .to_string();
-        self.add_token(TokenType::String, Literal::String(text));
+        self.add_token(TokenType::String, LiteralValue::String(text));
     }
 
     fn parse_number(&mut self) {
@@ -412,17 +409,39 @@ impl Parser {
 
         self.add_token(
             TokenType::Number,
-            Literal::Float(text.parse::<f64>().unwrap()),
+            LiteralValue::Float(text.parse::<f64>().unwrap()),
         );
     }
 
-    fn add_token(&mut self, token_type: TokenType, literal: Literal) {
+    fn add_token(&mut self, token_type: TokenType, LiteralValue: LiteralValue) {
         let text = self
             .get_substring(self.start as usize, self.curr as usize)
             .unwrap();
-        self.tokens
-            .extend([Token::new(token_type, text.to_string(), literal, self.line)]);
+        self.tokens.extend([Token::new(
+            token_type,
+            text.to_string(),
+            LiteralValue,
+            self.line,
+        )]);
     }
+}
+
+enum Expr {
+    Binary {
+        left: Box<Expr>,
+        operator: Token,
+        right: Box<Expr>,
+    },
+    Grouping {
+        expression: Box<Expr>,
+    },
+    Literal {
+        value: LiteralValue,
+    },
+    Unary {
+        operator: Token,
+        right: Box<Expr>,
+    },
 }
 
 fn main() {
