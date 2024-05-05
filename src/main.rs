@@ -19,7 +19,7 @@ fn is_alpha_numeric(c: char) -> bool {
     is_digit(c) || is_alpha(c)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum TokenType {
     LeftParen,
     RightParen,
@@ -93,11 +93,11 @@ impl Display for TokenType {
     }
 }
 
-struct Interpreter {
+struct Prompt {
     had_error: bool,
 }
 
-impl Interpreter {
+impl Prompt {
     fn new() -> Self {
         Self { had_error: false }
     }
@@ -143,8 +143,13 @@ impl Interpreter {
     }
 
     fn run(&self, source_ref: &String) {
-        let mut parser: Parser = Parser::new(source_ref.to_string());
-        let tokens: Vec<Token> = parser.parse_tokens();
+        let mut scanner: Scanner = Scanner::new(source_ref.to_string());
+        let tokens: Vec<Token> = scanner.parse_tokens();
+        let mut parser: Parser = Parser::new(tokens);
+        let expressions: Box<Expr> = parser.parse();
+        let mut ast_expr_str: String = String::new();
+        ast_print(&mut ast_expr_str, expressions);
+        println!("{}", ast_expr_str);
     }
     fn error(&self, line: u8, message: &str) {
         self.report(line, "", message);
@@ -157,23 +162,47 @@ impl Interpreter {
 #[derive(Clone, Debug)]
 enum LiteralValue {
     None,
+    Bool(bool),
     String(String),
     Float(f64),
+    Integer(i64),
+}
+
+impl fmt::Display for LiteralValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LiteralValue::String(string_val) => {
+                write!(f, "{}", string_val)
+            }
+            LiteralValue::Float(float_val) => {
+                write!(f, "{}", float_val)
+            }
+            LiteralValue::Integer(integer_val) => {
+                write!(f, "{}", integer_val)
+            }
+            LiteralValue::Bool(bool_val) => {
+                write!(f, "{}", bool_val)
+            }
+            LiteralValue::None => {
+                write!(f, "")
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 struct Token {
     token_type: TokenType,
     lexeme: String,
-    LiteralValue: LiteralValue,
+    literal_value: LiteralValue,
     line: u8,
 }
 impl Token {
-    fn new(token_type: TokenType, lexeme: String, LiteralValue: LiteralValue, line: u8) -> Self {
+    fn new(token_type: TokenType, lexeme: String, literal_value: LiteralValue, line: u8) -> Self {
         Token {
             token_type,
             lexeme,
-            LiteralValue,
+            literal_value,
             line,
         }
     }
@@ -184,16 +213,16 @@ impl Display for Token {
     }
 }
 
-struct Parser {
+struct Scanner {
     source_code: String,
     tokens: Vec<Token>,
     start: u8,
     curr: u8,
     line: u8,
 }
-impl Parser {
+impl Scanner {
     fn new(source_code: String) -> Self {
-        Parser {
+        Scanner {
             source_code,
             tokens: Vec::new(),
             start: 0,
@@ -444,7 +473,276 @@ enum Expr {
     },
 }
 
+fn ast_print(ast_expr_str: &mut String, expr: Box<Expr>) {
+    match *expr {
+        Expr::Binary {
+            left,
+            operator,
+            right,
+        } => {
+            ast_expr_str.push_str("(");
+            ast_expr_str.push_str(" ");
+            ast_expr_str.push_str(operator.lexeme.as_str());
+            ast_print(ast_expr_str, left);
+            ast_print(ast_expr_str, right);
+            ast_expr_str.push_str(")");
+        }
+        Expr::Grouping { expression } => {
+            ast_expr_str.push_str("(");
+            ast_expr_str.push_str(" ");
+            ast_expr_str.push_str("group ");
+            ast_print(ast_expr_str, expression);
+            ast_expr_str.push_str(")");
+        }
+        Expr::Literal { value } => {
+            ast_expr_str.push_str(value.to_string().as_str());
+        }
+        Expr::Unary { operator, right } => {
+            ast_expr_str.push_str("(");
+            ast_expr_str.push_str(" ");
+            ast_expr_str.push_str(operator.lexeme.as_str());
+            ast_print(ast_expr_str, right);
+            ast_expr_str.push_str(")");
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ParserError {
+    token: Token,
+    message: String,
+}
+impl fmt::Display for ParserError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+struct Parser {
+    tokens: Vec<Token>,
+    current: i128,
+}
+
+impl Parser {
+    fn new(tokens: Vec<Token>) -> Self {
+        Parser {
+            tokens: tokens,
+            current: 0,
+        }
+    }
+    fn match_type(&mut self, token_types: Vec<TokenType>) -> bool {
+        for tt in token_types {
+            if self.check_type(tt) {
+                self.advance();
+                return true;
+            }
+        }
+        return false;
+    }
+    fn check_type(&self, token_type: TokenType) -> bool {
+        if self.is_at_end() {
+            return false;
+        }
+        return self.peek().token_type == token_type;
+    }
+
+    fn advance(&mut self) -> Token {
+        if !self.is_at_end() {
+            self.current += 1;
+        }
+        return self.previous();
+    }
+
+    fn previous(&self) -> Token {
+        return self
+            .tokens
+            .get((self.current - 1) as usize)
+            .unwrap()
+            .clone();
+    }
+
+    fn is_at_end(&self) -> bool {
+        return self.peek().token_type == TokenType::EOF;
+    }
+    fn peek(&self) -> &Token {
+        return self.tokens.get(self.current as usize).unwrap();
+    }
+    fn expression(&mut self) -> Result<Box<Expr>, ParserError> {
+        return self.equality();
+    }
+    fn equality(&mut self) -> Result<Box<Expr>, ParserError> {
+        let mut expr = self.comparison().unwrap();
+        while self.match_type(vec![TokenType::BangEqual, TokenType::EqualEqual]) {
+            let operator = self.previous();
+            let right = self.comparison().unwrap();
+            expr = Box::new(Expr::Binary {
+                left: expr,
+                operator: operator,
+                right: right,
+            })
+        }
+        return Ok(expr);
+    }
+    fn comparison(&mut self) -> Result<Box<Expr>, ParserError> {
+        let mut expr = self.term().unwrap();
+        while self.match_type(vec![
+            TokenType::Greater,
+            TokenType::GreaterEqual,
+            TokenType::Less,
+            TokenType::LessEqual,
+        ]) {
+            let operator = self.previous();
+            let right = self.term().unwrap();
+            expr = Box::new(Expr::Binary {
+                left: expr,
+                operator: operator,
+                right: right,
+            })
+        }
+        return Ok(expr);
+    }
+    fn term(&mut self) -> Result<Box<Expr>, ParserError> {
+        let mut expr = self.factor().unwrap();
+        while self.match_type(vec![TokenType::Minus, TokenType::Plus]) {
+            let operator = self.previous();
+            let right = self.factor().unwrap();
+            expr = Box::new(Expr::Binary {
+                left: expr,
+                operator: operator,
+                right: right,
+            })
+        }
+        return Ok(expr);
+    }
+    fn factor(&mut self) -> Result<Box<Expr>, ParserError> {
+        let mut expr = self.unary().unwrap();
+        while self.match_type(vec![TokenType::Slash, TokenType::Star]) {
+            let operator = self.previous();
+            let right = self.unary().unwrap();
+            expr = Box::new(Expr::Binary {
+                left: expr,
+                operator: operator,
+                right: right,
+            })
+        }
+        return Ok(expr);
+    }
+    fn unary(&mut self) -> Result<Box<Expr>, ParserError> {
+        if self.match_type(vec![TokenType::Bang, TokenType::Minus]) {
+            let operator = self.previous();
+            let right = self.unary().unwrap();
+            return Ok(Box::new(Expr::Unary {
+                operator: operator,
+                right: right,
+            }));
+        }
+        return self.primary();
+    }
+    fn primary(&mut self) -> Result<Box<Expr>, ParserError> {
+        if self.match_type(vec![TokenType::Number]) {
+            return Ok(Box::new(Expr::Literal {
+                value: self.previous().literal_value,
+            }));
+        } else if self.match_type(vec![TokenType::True]) {
+            return Ok(Box::new(Expr::Literal {
+                value: LiteralValue::Bool(true),
+            }));
+        } else if self.match_type(vec![TokenType::False]) {
+            return Ok(Box::new(Expr::Literal {
+                value: LiteralValue::Bool(false),
+            }));
+        } else if self.match_type(vec![TokenType::Nil]) {
+            return Ok(Box::new(Expr::Literal {
+                value: LiteralValue::None,
+            }));
+        } else if self.match_type(vec![TokenType::LeftParen]) {
+            let expr = self.expression().unwrap();
+            if let Err(error) = self.consume(TokenType::RightParen, "Expect ')' after expression.")
+            {
+                return Err(error);
+            }
+            return Ok(Box::new(Expr::Grouping { expression: expr }));
+        } else {
+            let message = "Expect expression.";
+            self.error(self.peek().clone(), message);
+            return Err(ParserError {
+                token: self.peek().clone(),
+                message: message.to_string(),
+            });
+        }
+    }
+    fn consume(&mut self, token_type: TokenType, message: &str) -> Result<Token, ParserError> {
+        if self.check_type(token_type) {
+            return Ok((self.advance()));
+        }
+        self.error(self.peek().clone(), message);
+        return Err(ParserError {
+            token: self.peek().clone(),
+            message: message.to_string(),
+        });
+    }
+    fn error(&self, token: Token, message: &str) {
+        if token.token_type == TokenType::EOF {
+            self.report(token.line, " at end", message);
+        } else {
+            let mut new_message = String::new();
+            new_message.push_str(token.lexeme.as_str());
+            new_message.push_str("'");
+            new_message.push_str(message.clone());
+            self.report(token.line, " at '", new_message.as_str());
+        }
+    }
+
+    fn report(&self, line: u8, loc: &str, message: &str) {
+        println!("[line {0}] Error {1}: {2}", line, loc, message)
+    }
+    fn synchronize(&mut self) {
+        self.advance();
+        while (!self.is_at_end()) {
+            if (self.previous().token_type == TokenType::Semicolon) {
+                return;
+            }
+        }
+        match self.peek().token_type {
+            TokenType::Class
+            | TokenType::Fun
+            | TokenType::Var
+            | TokenType::For
+            | TokenType::If
+            | TokenType::While
+            | TokenType::Print
+            | TokenType::While
+            | TokenType::Return => {
+                return;
+            }
+            _ => {
+                self.advance();
+            }
+        }
+    }
+    fn parse(&mut self) -> Box<Expr>{
+        return self.expression().unwrap();
+    }
+}
+
 fn main() {
-    let mut interpreter: Interpreter = Interpreter::new();
-    interpreter.main();
+    let mut Prompt: Prompt = Prompt::new();
+    Prompt.main();
+    // let expr = Box::new(Expr::Binary {
+    //     left: Box::new(Expr::Unary {
+    //         operator: Token::new(TokenType::Minus, "-".to_string(), LiteralValue::None, 1),
+    //         right: Box::new(Expr::Literal {
+    //             value: LiteralValue::Integer(123),
+    //         }),
+    //     }),
+    //     operator: Token::new(TokenType::Star, "*".to_string(), LiteralValue::None, 1),
+    //     right: Box::new(Expr::Grouping {
+    //         expression: Box::new(Expr::Literal {
+    //             value: LiteralValue::Float(45.67),
+    //         }),
+    //     }),
+    // });
+    // let mut ast_str = String::new();
+    // ast_print(&mut ast_str, expr);
+    // println!("{}", ast_str);
 }
