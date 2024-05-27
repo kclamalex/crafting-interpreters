@@ -65,6 +65,10 @@ enum TokenType {
     Var,
     While,
 
+    // bitwise
+    BITWISE_AND,
+    BITWISE_OR,
+
     EOF,
 }
 
@@ -144,7 +148,7 @@ impl Prompt {
 
     fn run(&self, source_ref: &String) {
         let mut scanner: Scanner = Scanner::new(source_ref.to_string());
-        let tokens: Vec<Token> = scanner.parse_tokens();
+        let tokens: Vec<Token> = sBcanner.scan_tokens();
         let mut parser: Parser = Parser::new(tokens);
         let expressions: Box<Expr> = parser.parse();
         let mut ast_expr_str: String = String::new();
@@ -233,11 +237,11 @@ impl Scanner {
     fn is_at_end(&self) -> bool {
         self.curr >= self.source_code.len() as u8
     }
-    fn parse_tokens(&mut self) -> Vec<Token> {
+    fn scan_tokens(&mut self) -> Vec<Token> {
         let tokens: Vec<Token>;
         while !self.is_at_end() {
             self.start = self.curr;
-            self.parse_single_token();
+            self.scan_single_token();
         }
         self.tokens.extend([Token::new(
             TokenType::EOF,
@@ -292,7 +296,7 @@ impl Scanner {
             None => panic!("Empty char"),
         }
     }
-    fn parse_single_token(&mut self) {
+    fn scan_single_token(&mut self) {
         let c: char = self.next();
         match c {
             '(' => {
@@ -325,6 +329,8 @@ impl Scanner {
             '*' => {
                 self.add_token(TokenType::Star, LiteralValue::None);
             }
+            '&' => self.add_token(TokenType::BITWISE_AND, LiteralValue::None),
+            '|' => self.add_token(TokenType::BITWISE_OR, LiteralValue::None),
             '!' => {
                 match self.match_expr('=') {
                     true => self.add_token(TokenType::BangEqual, LiteralValue::None),
@@ -371,14 +377,14 @@ impl Scanner {
                     },
                 };
             }
-            '"' => self.parse_string(),
+            '"' => self.scan_string(),
             '\n' => self.line += 1,
             ' ' | '\r' | '\t' => {}
             _ => {
                 if is_digit(c) {
-                    self.parse_number()
+                    self.scan_number()
                 } else if is_alpha(c) {
-                    self.parse_identifer()
+                    self.scan_identifer()
                 } else {
                     panic!("Unexpected character.")
                 }
@@ -386,7 +392,7 @@ impl Scanner {
         }
     }
 
-    fn parse_identifer(&mut self) {
+    fn scan_identifer(&mut self) {
         while is_alpha_numeric(self.peek()) && !self.is_at_end() {
             self.next();
         }
@@ -401,7 +407,7 @@ impl Scanner {
         }
     }
 
-    fn parse_string(&mut self) {
+    fn scan_string(&mut self) {
         while self.peek() != '"' && !self.is_at_end() {
             if self.peek() == '\n' {
                 self.line += 1;
@@ -420,7 +426,7 @@ impl Scanner {
         self.add_token(TokenType::String, LiteralValue::String(text));
     }
 
-    fn parse_number(&mut self) {
+    fn scan_number(&mut self) {
         while is_digit(self.peek()) {
             self.next();
         }
@@ -571,70 +577,149 @@ impl Parser {
         return self.equality();
     }
     fn equality(&mut self) -> Result<Box<Expr>, ParserError> {
-        let mut expr = self.comparison().unwrap();
-        while self.match_type(vec![TokenType::BangEqual, TokenType::EqualEqual]) {
-            let operator = self.previous();
-            let right = self.comparison().unwrap();
-            expr = Box::new(Expr::Binary {
-                left: expr,
-                operator: operator,
-                right: right,
-            })
+        match self.comparison() {
+            Ok(mut expr) => {
+                while self.match_type(vec![TokenType::BangEqual, TokenType::EqualEqual]) {
+                    let operator = self.previous();
+                    match self.comparison() {
+                        Ok(right) => {
+                            expr = Box::new(Expr::Binary {
+                                left: expr,
+                                operator: operator,
+                                right: right,
+                            });
+                        }
+                        Err(error) => {
+                            return Err(error);
+                        }
+                    }
+                }
+                return Ok(expr);
+            }
+            Err(error) => {
+                return Err(error);
+            }
         }
-        return Ok(expr);
     }
     fn comparison(&mut self) -> Result<Box<Expr>, ParserError> {
-        let mut expr = self.term().unwrap();
-        while self.match_type(vec![
-            TokenType::Greater,
-            TokenType::GreaterEqual,
-            TokenType::Less,
-            TokenType::LessEqual,
-        ]) {
-            let operator = self.previous();
-            let right = self.term().unwrap();
-            expr = Box::new(Expr::Binary {
-                left: expr,
-                operator: operator,
-                right: right,
-            })
+        match self.bitwise() {
+            Ok(mut expr) => {
+                while self.match_type(vec![
+                    TokenType::Greater,
+                    TokenType::GreaterEqual,
+                    TokenType::Less,
+                    TokenType::LessEqual,
+                ]) {
+                    let operator = self.previous();
+                    match self.bitwise() {
+                        Ok(right) => {
+                            expr = Box::new(Expr::Binary {
+                                left: expr,
+                                operator: operator,
+                                right: right,
+                            });
+                        }
+                        Err(error) => {
+                            return Err(error);
+                        }
+                    }
+                }
+                return Ok(expr);
+            }
+            Err(error) => {
+                return Err(error);
+            }
         }
-        return Ok(expr);
+    }
+    fn bitwise(&mut self) -> Result<Box<Expr>, ParserError> {
+        match self.term() {
+            Ok(mut expr) => {
+                while self.match_type(vec![TokenType::BITWISE_AND, TokenType::BITWISE_OR]) {
+                    let operator = self.previous();
+                    match self.term() {
+                        Ok(right) => {
+                            expr = Box::new(Expr::Binary {
+                                left: expr,
+                                operator: operator,
+                                right: right,
+                            });
+                        }
+                        Err(error) => {
+                            return Err(error);
+                        }
+                    }
+                }
+                return Ok(expr);
+            }
+            Err(error) => {
+                return Err(error);
+            }
+        }
     }
     fn term(&mut self) -> Result<Box<Expr>, ParserError> {
-        let mut expr = self.factor().unwrap();
-        while self.match_type(vec![TokenType::Minus, TokenType::Plus]) {
-            let operator = self.previous();
-            let right = self.factor().unwrap();
-            expr = Box::new(Expr::Binary {
-                left: expr,
-                operator: operator,
-                right: right,
-            })
+        match self.factor() {
+            Ok(mut expr) => {
+                while self.match_type(vec![TokenType::Minus, TokenType::Plus]) {
+                    let operator = self.previous();
+                    match self.factor() {
+                        Ok(right) => {
+                            expr = Box::new(Expr::Binary {
+                                left: expr,
+                                operator: operator,
+                                right: right,
+                            });
+                        }
+                        Err(error) => {
+                            return Err(error);
+                        }
+                    }
+                }
+                return Ok(expr);
+            }
+            Err(error) => {
+                return Err(error);
+            }
         }
-        return Ok(expr);
     }
     fn factor(&mut self) -> Result<Box<Expr>, ParserError> {
-        let mut expr = self.unary().unwrap();
-        while self.match_type(vec![TokenType::Slash, TokenType::Star]) {
-            let operator = self.previous();
-            let right = self.unary().unwrap();
-            expr = Box::new(Expr::Binary {
-                left: expr,
-                operator: operator,
-                right: right,
-            })
+        match self.unary() {
+            Ok(mut expr) => {
+                while self.match_type(vec![TokenType::Slash, TokenType::Star]) {
+                    let operator = self.previous();
+                    match self.unary() {
+                        Ok(right) => {
+                            expr = Box::new(Expr::Binary {
+                                left: expr,
+                                operator: operator,
+                                right: right,
+                            });
+                        }
+                        Err(error) => {
+                            return Err(error);
+                        }
+                    }
+                }
+                return Ok(expr);
+            }
+            Err(error) => {
+                return Err(error);
+            }
         }
-        return Ok(expr);
     }
     fn unary(&mut self) -> Result<Box<Expr>, ParserError> {
         if self.match_type(vec![TokenType::Bang, TokenType::Minus]) {
             let operator = self.previous();
-            let right = self.unary().unwrap();
-            return Ok(Box::new(Expr::Unary {
-                operator: operator,
-                right: right,
-            }));
+            match self.unary() {
+                Ok(right) => {
+                    return Ok(Box::new(Expr::Unary {
+                        operator: operator,
+                        right: right,
+                    }));
+                }
+                Err(error) => {
+                    return Err(error);
+                }
+            }
         }
         return self.primary();
     }
@@ -663,8 +748,7 @@ impl Parser {
             }
             return Ok(Box::new(Expr::Grouping { expression: expr }));
         } else {
-            let message = "Expect expression.";
-            self.error(self.peek().clone(), message);
+            let message = " Expect expression.";
             return Err(ParserError {
                 token: self.peek().clone(),
                 message: message.to_string(),
@@ -675,7 +759,6 @@ impl Parser {
         if self.check_type(token_type) {
             return Ok((self.advance()));
         }
-        self.error(self.peek().clone(), message);
         return Err(ParserError {
             token: self.peek().clone(),
             message: message.to_string(),
@@ -720,8 +803,82 @@ impl Parser {
             }
         }
     }
-    fn parse(&mut self) -> Box<Expr>{
-        return self.expression().unwrap();
+    fn parse(&mut self) -> Box<Expr> {
+        match self.expression() {
+            Ok(expr) => {
+                return expr;
+            }
+            Err(error) => {
+                self.error(error.token, &error.message);
+                self.synchronize();
+                return Box::new(Expr::Literal {
+                    value: LiteralValue::None,
+                });
+            }
+        }
+    }
+}
+
+struct Interpreter {}
+
+impl Interpreter {
+    fn is_truthy(&self, literal_value: LiteralValue ) -> bool {
+        match literal_value {
+            LiteralValue::None => false, 
+            LiteralValue::Bool(value) => value,
+            LiteralValue::Integer(value) => {
+                if value == 0 { 
+                    false
+                } else {
+                    true
+                }
+            },
+            LiteralValue::String(value) => {
+                if value == "" {
+                    false
+                } else {
+                    true
+                }
+            },
+            LiteralValue::Float(value) => {
+                if value == 0.0 {
+                    false
+                } else {
+                    true
+                }
+            }
+        }
+    }
+    fn evaluate(&mut self, expr: Box<Expr>) -> LiteralValue{
+        match *expr {
+            Expr::Binary {
+                left,
+                operator,
+                right,
+            } => {
+                let left_literal_val = self.evaluate(left)
+                let right_literal_val = self.evaluate(right)
+                }
+            }
+            Expr::Grouping { expression } => self.evaluate(expression),
+            Expr::Literal { value } => value,
+            Expr::Unary { operator, right } => {
+                let right_literal_val: LiteralValue = self.evaluate(right);
+                match operator.token_type {
+                    TokenType::Minus=> {
+                        match right_literal_val {
+                            LiteralValue::Float( value ) => LiteralValue::Float( -value ),
+                            LiteralValue::Integer( value ) => LiteralValue::Integer( -value ),
+                            _ => { panic!() }
+                        }
+                    }
+                    TokenType::Bang => {
+                        LiteralValue::Bool(!self.is_truthy(right_literal_val))
+                    }
+                    _ => { LiteralValue::None }
+                }
+            }
+        }
     }
 }
 
