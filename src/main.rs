@@ -148,12 +148,15 @@ impl Prompt {
 
     fn run(&self, source_ref: &String) {
         let mut scanner: Scanner = Scanner::new(source_ref.to_string());
-        let tokens: Vec<Token> = sBcanner.scan_tokens();
+        let tokens: Vec<Token> = scanner.scan_tokens();
         let mut parser: Parser = Parser::new(tokens);
         let expressions: Box<Expr> = parser.parse();
+        let mut interpreter: Interpreter = Interpreter {};
+        let value: LiteralValue = interpreter.evaluate(expressions.clone());
         let mut ast_expr_str: String = String::new();
-        ast_print(&mut ast_expr_str, expressions);
+        ast_print(&mut ast_expr_str, expressions.clone());
         println!("{}", ast_expr_str);
+        println!("{}", value);
     }
     fn error(&self, line: u8, message: &str) {
         self.report(line, "", message);
@@ -460,7 +463,7 @@ impl Scanner {
         )]);
     }
 }
-
+#[derive(Clone)]
 enum Expr {
     Binary {
         left: Box<Expr>,
@@ -822,24 +825,24 @@ impl Parser {
 struct Interpreter {}
 
 impl Interpreter {
-    fn is_truthy(&self, literal_value: LiteralValue ) -> bool {
+    fn is_truthy(&self, literal_value: LiteralValue) -> bool {
         match literal_value {
-            LiteralValue::None => false, 
+            LiteralValue::None => false,
             LiteralValue::Bool(value) => value,
             LiteralValue::Integer(value) => {
-                if value == 0 { 
+                if value == 0 {
                     false
                 } else {
                     true
                 }
-            },
+            }
             LiteralValue::String(value) => {
                 if value == "" {
                     false
                 } else {
                     true
                 }
-            },
+            }
             LiteralValue::Float(value) => {
                 if value == 0.0 {
                     false
@@ -849,15 +852,67 @@ impl Interpreter {
             }
         }
     }
-    fn evaluate(&mut self, expr: Box<Expr>) -> LiteralValue{
+    fn evaluate(&mut self, expr: Box<Expr>) -> LiteralValue {
         match *expr {
             Expr::Binary {
                 left,
                 operator,
                 right,
             } => {
-                let left_literal_val = self.evaluate(left)
-                let right_literal_val = self.evaluate(right)
+                let left_literal_val = self.evaluate(left);
+                let right_literal_val = self.evaluate(right);
+                match operator.token_type {
+                    TokenType::Minus => match (left_literal_val, right_literal_val) {
+                        (LiteralValue::Float(left_value), LiteralValue::Float(right_value)) => {
+                            LiteralValue::Float(left_value - right_value)
+                        }
+                        (LiteralValue::Integer(left_value), LiteralValue::Integer(right_value)) => {
+                            LiteralValue::Integer(left_value - right_value)
+                        }
+                        _ => {
+                            panic!()
+                        }
+                    },
+                    TokenType::Plus => match (left_literal_val, right_literal_val) {
+                        (LiteralValue::Float(left_value), LiteralValue::Float(right_value)) => {
+                            LiteralValue::Float(left_value + right_value)
+                        }
+                        (LiteralValue::Integer(left_value), LiteralValue::Integer(right_value)) => {
+                            LiteralValue::Integer(left_value + right_value)
+                        }
+                        (LiteralValue::String(left_value), LiteralValue::String(right_value)) => {
+                            let concat_string: String = format!("{left_value}{right_value}");
+                            LiteralValue::String(concat_string)
+                        }
+                        _ => {
+                            panic!()
+                        }
+                    },
+                    TokenType::Star => match (left_literal_val, right_literal_val) {
+                        (LiteralValue::Float(left_value), LiteralValue::Float(right_value)) => {
+                            LiteralValue::Float(left_value * right_value)
+                        }
+                        (LiteralValue::Integer(left_value), LiteralValue::Integer(right_value)) => {
+                            LiteralValue::Integer(left_value * right_value)
+                        }
+                        _ => {
+                            panic!()
+                        }
+                    },
+                    TokenType::Slash => match (left_literal_val, right_literal_val) {
+                        (LiteralValue::Float(left_value), LiteralValue::Float(right_value)) => {
+                            LiteralValue::Float(left_value / right_value)
+                        }
+                        (LiteralValue::Integer(left_value), LiteralValue::Integer(right_value)) => {
+                            LiteralValue::Integer(left_value / right_value)
+                        }
+                        _ => {
+                            panic!()
+                        }
+                    },
+                    _ => {
+                        panic!()
+                    }
                 }
             }
             Expr::Grouping { expression } => self.evaluate(expression),
@@ -865,17 +920,15 @@ impl Interpreter {
             Expr::Unary { operator, right } => {
                 let right_literal_val: LiteralValue = self.evaluate(right);
                 match operator.token_type {
-                    TokenType::Minus=> {
-                        match right_literal_val {
-                            LiteralValue::Float( value ) => LiteralValue::Float( -value ),
-                            LiteralValue::Integer( value ) => LiteralValue::Integer( -value ),
-                            _ => { panic!() }
+                    TokenType::Minus => match right_literal_val {
+                        LiteralValue::Float(value) => LiteralValue::Float(-value),
+                        LiteralValue::Integer(value) => LiteralValue::Integer(-value),
+                        _ => {
+                            panic!()
                         }
-                    }
-                    TokenType::Bang => {
-                        LiteralValue::Bool(!self.is_truthy(right_literal_val))
-                    }
-                    _ => { LiteralValue::None }
+                    },
+                    TokenType::Bang => LiteralValue::Bool(!self.is_truthy(right_literal_val)),
+                    _ => LiteralValue::None,
                 }
             }
         }
@@ -883,8 +936,8 @@ impl Interpreter {
 }
 
 fn main() {
-    let mut Prompt: Prompt = Prompt::new();
-    Prompt.main();
+    let mut prompt: Prompt = Prompt::new();
+    prompt.main();
     // let expr = Box::new(Expr::Binary {
     //     left: Box::new(Expr::Unary {
     //         operator: Token::new(TokenType::Minus, "-".to_string(), LiteralValue::None, 1),
