@@ -1,4 +1,4 @@
-use crate::common::{Token, LiteralValue, Expr, TokenType};
+use crate::common::{Expr, LiteralValue, Token, TokenType};
 use crate::error::ParserError;
 
 pub struct Parser {
@@ -8,10 +8,7 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Parser {
-            tokens,
-            current: 0,
-        }
+        Parser { tokens, current: 0 }
     }
     fn match_type(&mut self, token_types: Vec<TokenType>) -> bool {
         for tt in token_types {
@@ -188,10 +185,7 @@ impl Parser {
             let operator = self.previous();
             match self.unary() {
                 Ok(right) => {
-                    return Ok(Box::new(Expr::Unary {
-                        operator,
-                        right,
-                    }));
+                    return Ok(Box::new(Expr::Unary { operator, right }));
                 }
                 Err(error) => {
                     return Err(error);
@@ -254,7 +248,7 @@ impl Parser {
     }
 
     fn report(&self, line: u8, loc: &str, message: &str) {
-        println!("[line {0}] Error {1}: {2}", line, loc, message)
+        println!("[line {0}:{1}] Error: {2}", line, loc, message)
     }
     fn synchronize(&mut self) {
         self.advance();
@@ -271,7 +265,6 @@ impl Parser {
             | TokenType::If
             | TokenType::While
             | TokenType::Print
-            | TokenType::While
             | TokenType::Return => {
                 return;
             }

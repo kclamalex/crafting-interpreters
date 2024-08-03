@@ -1,5 +1,5 @@
-use crate::common::{TokenType, Token, LiteralValue, KEYWORDS};
-use crate::utils::{is_alpha, is_digit, is_alpha_numeric};
+use crate::common::{LiteralValue, Token, TokenType};
+use crate::utils::{is_alpha, is_alpha_numeric, is_digit};
 
 pub struct Scanner {
     source_code: String,
@@ -183,12 +183,26 @@ impl Scanner {
         let text = self
             .get_substring(self.start as usize, self.curr as usize)
             .unwrap();
-
-        if KEYWORDS.contains_key(text) {
-            self.add_token(KEYWORDS.get(text).unwrap().clone(), LiteralValue::None)
-        } else {
-            self.add_token(TokenType::Identifier, LiteralValue::None)
-        }
+        let token_type: TokenType = match text {
+            "and" => TokenType::And,
+            "class" => TokenType::Class,
+            "else" => TokenType::Else,
+            "false" => TokenType::False,
+            "fun" => TokenType::Fun,
+            "for" => TokenType::For,
+            "if" => TokenType::If,
+            "nil" => TokenType::Nil,
+            "or" => TokenType::Or,
+            "print" => TokenType::Print,
+            "return" => TokenType::Return,
+            "super" => TokenType::Super,
+            "this" => TokenType::This,
+            "true" => TokenType::True,
+            "var" => TokenType::Var,
+            "while" => TokenType::While,
+            _ => TokenType::Identifier,
+        };
+        self.add_token(token_type, LiteralValue::None)
     }
 
     fn scan_string(&mut self) {
@@ -244,4 +258,3 @@ impl Scanner {
         )]);
     }
 }
-
