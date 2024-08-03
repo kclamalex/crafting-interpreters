@@ -241,7 +241,6 @@ impl Parser {
         } else {
             let mut new_message = String::new();
             new_message.push_str(token.lexeme.as_str());
-            new_message.push_str("'");
             new_message.push_str(message.clone());
             self.report(token.line, " at '", new_message.as_str());
         }

@@ -5,6 +5,7 @@ use std::path::Path;
 
 mod common;
 mod error;
+mod interpreter;
 mod parser;
 mod scanner;
 mod utils;
@@ -63,11 +64,12 @@ impl Prompt {
         let tokens: Vec<common::Token> = scanner.scan_tokens();
         let mut parser: parser::Parser = parser::Parser::new(tokens);
         let expressions: Box<common::Expr> = parser.parse();
-        // let mut interpreter: interpreter::Interpreter = interpreter::Interpreter {};
-        // let value: common::LiteralValue = interpreter.evaluate(expressions.clone());
+        let mut interpreter: interpreter::Interpreter = interpreter::Interpreter {};
+        let value: common::LiteralValue = interpreter.evaluate(expressions.clone()).unwrap();
         let mut ast_expr_str: String = String::new();
         utils::ast_print(&mut ast_expr_str, expressions.clone());
         println!("{}", ast_expr_str);
+        println!("{}", value);
     }
     fn error(&self, line: u8, message: &str) {
         self.report(line, "", message);
