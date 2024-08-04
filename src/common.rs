@@ -111,7 +111,7 @@ impl fmt::Display for LiteralValue {
                 write!(f, "{}", bool_val)
             }
             LiteralValue::None => {
-                write!(f, "")
+                write!(f, "nil")
             }
         }
     }

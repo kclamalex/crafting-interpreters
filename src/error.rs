@@ -13,11 +13,12 @@ impl fmt::Display for ParserError {
 }
 
 #[derive(Debug, Clone)]
-pub struct InterpreterError {
+pub struct RuntimeError {
     pub message: String,
 }
-impl fmt::Display for InterpreterError{
+impl fmt::Display for RuntimeError{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.message)
     }
 }
+
