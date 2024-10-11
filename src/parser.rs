@@ -1,4 +1,4 @@
-use crate::common::{Expr, LiteralValue, Token, TokenType};
+use crate::common::{Expr, LiteralValue, Statement, Token, TokenType};
 use crate::error::ParserError;
 
 pub struct Parser {
@@ -48,7 +48,20 @@ impl Parser {
         return self.tokens.get(self.current as usize).unwrap();
     }
     fn expression(&mut self) -> Result<Box<Expr>, ParserError> {
-        return self.equality();
+        return self.assignment();
+    }
+    fn assignment(&mut self) -> Result<Box<Expr>, ParserError> {
+        let expr = *self.equality().unwrap();
+        if self.match_type(vec![TokenType::Equal]) {
+            let operator: Token = self.previous();
+            let value = self.assignment().unwrap();
+            if let Expr::Var { name } = expr {
+                return Ok(Box::new(Expr::Assign { name, value }));
+            } else {
+                self.error(operator, "Invalid assignment target");
+            }
+        }
+        Ok(Box::new(expr))
     }
     fn equality(&mut self) -> Result<Box<Expr>, ParserError> {
         match self.comparison() {
@@ -218,6 +231,9 @@ impl Parser {
                 return Err(error);
             }
             return Ok(Box::new(Expr::Grouping { expression: expr }));
+        } else if self.match_type(vec![TokenType::Identifier]) {
+            let previous_val = self.previous();
+            return Ok(Box::new(Expr::Var { name: previous_val }));
         } else {
             let message = " Expect expression.";
             return Err(ParserError {
@@ -272,18 +288,87 @@ impl Parser {
             }
         }
     }
-    pub fn parse(&mut self) -> Box<Expr> {
+    fn print_statement(&mut self) -> Result<Statement, ParserError> {
         match self.expression() {
             Ok(expr) => {
-                return expr;
+                self.consume(TokenType::Semicolon, "Expected ';' after print statement");
+                Ok(Statement::Print { expr: *expr })
             }
-            Err(error) => {
-                self.error(error.token, &error.message);
-                self.synchronize();
-                return Box::new(Expr::Literal {
-                    value: LiteralValue::None,
-                });
+            Err(err) => Err(err),
+        }
+    }
+    fn expression_statement(&mut self) -> Result<Statement, ParserError> {
+        match self.expression() {
+            Ok(expr) => {
+                self.consume(TokenType::Semicolon, "Expected ';' after print statement");
+                Ok(Statement::Expr { expr: *expr })
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn statement(&mut self) -> Result<Statement, ParserError> {
+        if self.match_type(vec![TokenType::Print]) {
+            return self.print_statement();
+        } else if self.match_type(vec![TokenType::LeftBrace]) {
+            return self.block_statement();
+        }
+        self.expression_statement()
+    }
+    fn var_declaration(&mut self) -> Result<Statement, ParserError> {
+        let name = self
+            .consume(TokenType::Identifier, "Expected variable name")
+            .unwrap();
+        let mut initialiser: Box<Expr> = Box::new(Expr::Literal {
+            value: LiteralValue::None,
+        });
+        if self.match_type(vec![TokenType::Equal]) {
+            initialiser = self.expression().unwrap();
+        }
+        let _ = self.consume(
+            TokenType::Semicolon,
+            "Expect ';' after variable declaration",
+        );
+        return Ok(Statement::Var {
+            name,
+            expr: *initialiser,
+        });
+    }
+    fn declaration(&mut self) -> Result<Statement, ParserError> {
+        if self.match_type(vec![TokenType::Var]) {
+            return self.var_declaration();
+        }
+        return self.statement();
+    }
+    fn block_statement(&mut self) -> Result<Statement, ParserError> {
+        let mut stmt_vec = Vec::new();
+        while !self.match_type(vec![TokenType::RightBrace]) {
+            let new_stmt = self.declaration().unwrap();
+            stmt_vec.push(new_stmt);
+        }
+        let _ = self.consume(TokenType::RightBrace, "Expect '}' after block.");
+        Ok(Statement::Block {
+            statements: stmt_vec,
+        })
+    }
+    pub fn parse(&mut self) -> Vec<Statement> {
+        let mut statements: Vec<Statement> = vec![];
+        while !self.is_at_end() {
+            match self.declaration() {
+                Ok(stmt) => {
+                    statements.push(stmt);
+                }
+                Err(error) => {
+                    self.error(error.token, &error.message);
+                    self.synchronize();
+                    return vec![Statement::Expr {
+                        expr: Expr::Literal {
+                            value: LiteralValue::None,
+                        },
+                    }];
+                }
             }
         }
+        statements
     }
 }

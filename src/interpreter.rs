@@ -1,16 +1,20 @@
-use crate::common::{Expr, LiteralValue, TokenType};
+use crate::common::{Expr, LiteralValue, Statement, TokenType};
+use crate::environment::Environment;
 use crate::error::RuntimeError;
 use std::default::Default;
 
 pub struct Interpreter {
     had_error: bool,
     had_runtime_error: bool,
+    environment: Environment,
 }
+
 impl Default for Interpreter {
     fn default() -> Self {
         Interpreter {
             had_error: false,
             had_runtime_error: false,
+            environment: Environment::default(),
         }
     }
 }
@@ -51,7 +55,6 @@ impl Interpreter {
     fn return_error_string(&mut self, operator: TokenType) -> String {
         return format!("Invalid data type for {operator}");
     }
-    fn check_number_operand(operator_token_type: &TokenType, right_value: &LiteralValue) {}
 
     fn evaluate_binary(
         &mut self,
@@ -180,7 +183,7 @@ impl Interpreter {
         }
     }
 
-    pub fn evaluate(&mut self, expr: Box<Expr>) -> Result<LiteralValue, RuntimeError> {
+    fn evaluate(&mut self, expr: Box<Expr>) -> Result<LiteralValue, RuntimeError> {
         match *expr {
             Expr::Binary {
                 left,
@@ -197,6 +200,47 @@ impl Interpreter {
                 let right_literal_val: LiteralValue = self.evaluate(right).unwrap();
                 self.evaluate_unary(&operator.token_type, &right_literal_val)
             }
+            Expr::Var { name } => self.environment.get(name),
+            Expr::Assign { name, value } => {
+                let value = self.evaluate(value)?;
+                let _ = self.environment.assign(name, value.clone());
+                Ok(value)
+            }
+        }
+    }
+    fn execute(&mut self, stmt: Statement) {
+        match stmt {
+            Statement::Print { expr } => {
+                let val = self.evaluate(Box::new(expr)).unwrap();
+                println!("{}", val);
+            }
+            Statement::Expr { expr } => {
+                self.evaluate(Box::new(expr)).unwrap();
+            }
+            Statement::Var { name, expr } => {
+                let mut val: LiteralValue = LiteralValue::None;
+                if let Expr::Literal {
+                    value: LiteralValue::None,
+                } = expr
+                {
+                    return;
+                }
+                val = self.evaluate(Box::new(expr)).unwrap();
+                self.environment.define(name, val);
+            }
+            Statement::Block { statements } => self.execute_block(statements),
+        }
+    }
+    fn execute_block(&mut self, stmts: Vec<Statement>) {
+        let previous = self.environment.clone();
+        for stmt in stmts {
+            self.execute(stmt);
+        }
+        self.environment = previous
+    }
+    pub fn interpret(&mut self, stmts: Vec<Statement>) {
+        for s in stmts {
+            self.execute(s);
         }
     }
 }

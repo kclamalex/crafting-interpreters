@@ -3,7 +3,10 @@ use std::fs::read_to_string;
 use std::io;
 use std::path::Path;
 
+use self::interpreter::Interpreter;
+
 mod common;
+mod environment;
 mod error;
 mod interpreter;
 mod parser;
@@ -12,11 +15,15 @@ mod utils;
 
 struct Prompt {
     had_error: bool,
+    interpreter: Interpreter,
 }
 
 impl Prompt {
     pub fn new() -> Self {
-        Self { had_error: false }
+        Self {
+            had_error: false,
+            interpreter: Interpreter::default(),
+        }
     }
     pub fn main(&mut self) {
         let args: Vec<String> = env::args().collect();
@@ -59,17 +66,12 @@ impl Prompt {
         }
     }
 
-    fn run(&self, source_ref: &String) {
+    fn run(&mut self, source_ref: &String) {
         let mut scanner: scanner::Scanner = scanner::Scanner::new(source_ref.to_string());
         let tokens: Vec<common::Token> = scanner.scan_tokens();
         let mut parser: parser::Parser = parser::Parser::new(tokens);
-        let expressions: Box<common::Expr> = parser.parse();
-        let mut interpreter: interpreter::Interpreter = interpreter::Interpreter {};
-        let value: common::LiteralValue = interpreter.evaluate(expressions.clone()).unwrap();
-        let mut ast_expr_str: String = String::new();
-        utils::ast_print(&mut ast_expr_str, expressions.clone());
-        println!("{}", ast_expr_str);
-        println!("{}", value);
+        let statements: Vec<common::Statement> = parser.parse();
+        self.interpreter.interpret(statements.clone());
     }
     fn error(&self, line: u8, message: &str) {
         self.report(line, "", message);

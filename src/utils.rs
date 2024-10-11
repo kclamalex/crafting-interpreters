@@ -42,5 +42,19 @@ pub fn ast_print(ast_expr_str: &mut String, expr: Box<Expr>) {
             ast_print(ast_expr_str, right);
             ast_expr_str.push_str(")");
         }
+        Expr::Var { name } => {
+            ast_expr_str.push_str("var");
+            ast_expr_str.push_str("(");
+            ast_expr_str.push_str(&name.lexeme);
+            ast_expr_str.push_str(")");
+        }
+        Expr::Assign { name, value } => {
+            ast_expr_str.push_str("var");
+            ast_expr_str.push_str("(");
+            ast_expr_str.push_str(&name.lexeme);
+            ast_expr_str.push_str("=");
+            ast_print(ast_expr_str, value);
+            ast_expr_str.push_str(")");
+        }
     }
 }

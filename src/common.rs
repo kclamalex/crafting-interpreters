@@ -1,6 +1,6 @@
 use core::fmt;
-use std::fmt::Display;
 use std::cmp::PartialEq;
+use std::fmt::Display;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenType {
@@ -160,4 +160,19 @@ pub enum Expr {
         operator: Token,
         right: Box<Expr>,
     },
+    Var {
+        name: Token,
+    },
+    Assign {
+        name: Token,
+        value: Box<Expr>,
+    },
+}
+
+#[derive(Clone)]
+pub enum Statement {
+    Expr { expr: Expr },
+    Print { expr: Expr },
+    Var { name: Token, expr: Expr },
+    Block { statements: Vec<Statement> },
 }
