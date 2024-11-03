@@ -218,14 +218,13 @@ impl Interpreter {
                 self.evaluate(Box::new(expr)).unwrap();
             }
             Statement::Var { name, expr } => {
-                let mut val: LiteralValue = LiteralValue::None;
                 if let Expr::Literal {
                     value: LiteralValue::None,
                 } = expr
                 {
                     return;
                 }
-                val = self.evaluate(Box::new(expr)).unwrap();
+                let val: LiteralValue = self.evaluate(Box::new(expr)).unwrap();
                 self.environment.define(name, val);
             }
             Statement::Block { statements } => self.execute_block(statements),
